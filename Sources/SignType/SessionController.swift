@@ -308,7 +308,7 @@ final class SessionController: ObservableObject {
         // Motion stream: both hands in body coordinates → segments of "the hands did a thing".
         let motion = MotionFrame(observation: observation, time: now)
         let segment = segmenter.ingest(motion)
-        let inMotion = segmenter.isActive
+        let inMotion = segmenter.isMoving
         if segment != nil { matcher.maxDistance = Float(settings.matchDistance) }
 
         if now - lastDiag >= 1 {

@@ -167,9 +167,21 @@ final class MotionSegmenter {
     private var ema = 0.0
     private var last: MotionFrame?
     private var missing = 0
+    private var smoothSize: [Double?] = [nil, nil]
     private(set) var isActive = false
     /// Smoothed wrist speed of the latest frame (shoulder widths per frame), for diagnostics.
     private(set) var currentSpeed = 0.0
+
+    /// Apparent-size changes are noisy; smooth them and weight them so a real push towards the
+    /// camera registers but tracking jitter does not.
+    var sizeSmoothing = 0.3
+    var sizeWeight = 1.5
+    /// Letters are only paused once a segment has travelled this far, so jitter that briefly
+    /// trips the start threshold does not block fingerspelling.
+    var pauseLettersAfterPath = 0.1
+
+    /// True when a sign is clearly in progress (not just the first jittery frames).
+    var isMoving: Bool { isActive && path >= pauseLettersAfterPath }
 
     func reset() {
         history = []
@@ -179,6 +191,7 @@ final class MotionSegmenter {
         ema = 0
         last = nil
         missing = 0
+        smoothSize = [nil, nil]
         isActive = false
     }
 
@@ -187,6 +200,7 @@ final class MotionSegmenter {
         guard let frame else {
             history = []
             currentSpeed = 0
+            smoothSize = [nil, nil]
             if isActive {
                 missing += 1
                 if missing <= missingGrace { return nil }
@@ -197,15 +211,22 @@ final class MotionSegmenter {
         }
         missing = 0
         var speed = 0.0
-        if let last {
-            for i in 0..<2 {
-                if let a = last.wrists[i], let b = frame.wrists[i] {
-                    speed = max(speed, Double(hypot(a.x - b.x, a.y - b.y)))
+        for i in 0..<2 {
+            if let last, let a = last.wrists[i], let b = frame.wrists[i] {
+                speed = max(speed, Double(hypot(a.x - b.x, a.y - b.y)))
+            }
+            // Moving towards/away from the camera shows up as the palm growing/shrinking.
+            // Smoothed, because the raw size estimate jitters by a few percent at rest.
+            if let sb = frame.sizes[i], sb > 0 {
+                if let s = smoothSize[i], s > 0 {
+                    let ns = (1 - sizeSmoothing) * s + sizeSmoothing * sb
+                    speed = max(speed, abs(ns - s) / s * sizeWeight)
+                    smoothSize[i] = ns
+                } else {
+                    smoothSize[i] = sb
                 }
-                // Moving towards/away from the camera shows up as the palm growing/shrinking.
-                if let sa = last.sizes[i], let sb = frame.sizes[i], sa > 0 {
-                    speed = max(speed, abs(sb - sa) / sa)
-                }
+            } else {
+                smoothSize[i] = nil
             }
         }
         last = frame
