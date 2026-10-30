@@ -28,12 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         buildStatusItem()
         controller.onActivityChange = { [weak self] _ in self?.refreshMenu() }
 
+        // Accessibility covers both the global fn-key tap and typing into other apps.
         if !Permissions.accessibilityTrusted { Permissions.requestAccessibility() }
-        if !Permissions.inputMonitoringGranted { Permissions.requestInputMonitoring() }
 
         hotkey = FnTripleTapMonitor { [weak self] in self?.controller.toggle() }
         if hotkey?.start() != true {
-            // Input Monitoring not granted yet – keep retrying until the user flips the switch.
+            // Accessibility not granted yet – keep retrying until the user flips the switch.
             hotkeyRetry = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] t in
                 if self?.hotkey?.start() == true {
                     t.invalidate()
@@ -91,6 +91,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(settings)
         menu.addItem(.separator())
 
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let version = NSMenuItem(title: "Build \(build)", action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
         let quit = NSMenuItem(title: "Quit SignType", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
 
@@ -118,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.contentTintColor = controller.activity == .signing ? .systemGreen : nil
         }
         if hotkey?.isRunning != true {
-            toggleItem.title += "  (fn hotkey needs Input Monitoring)"
+            toggleItem.title += "  (fn hotkey needs Accessibility)"
         }
     }
 

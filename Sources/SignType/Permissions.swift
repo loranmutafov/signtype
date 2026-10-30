@@ -13,7 +13,7 @@ enum Permissions {
         _ = AXIsProcessTrustedWithOptions(opts)
     }
 
-    // MARK: Input Monitoring (needed for the global fn-key event tap)
+    // MARK: Input Monitoring (not required when Accessibility is granted; kept for diagnostics)
 
     static var inputMonitoringGranted: Bool { CGPreflightListenEventAccess() }
 
@@ -49,8 +49,7 @@ enum Permissions {
         func mark(_ b: Bool) -> String { b ? "✅" : "❌" }
         return """
         \(mark(cameraStatus == .authorized)) Camera
-        \(mark(accessibilityTrusted)) Accessibility (typing into other apps)
-        \(mark(inputMonitoringGranted)) Input Monitoring (fn key triple-tap)
+        \(mark(accessibilityTrusted)) Accessibility (fn key triple-tap + typing into other apps)
         """
     }
 }

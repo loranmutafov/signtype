@@ -53,9 +53,11 @@ struct SettingsView: View {
                     .font(.system(.body, design: .monospaced))
                 HStack {
                     Button("Accessibility…") { Permissions.requestAccessibility(); Permissions.openSystemSettings(pane: "Privacy_Accessibility") }
-                    Button("Input Monitoring…") { Permissions.requestInputMonitoring(); Permissions.openSystemSettings(pane: "Privacy_ListenEvent") }
                     Button("Camera…") { Permissions.openSystemSettings(pane: "Privacy_Camera") }
                 }
+                Text("Accessibility is enough for the global fn tap; Input Monitoring is not needed.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 Text("Also set System Settings ▸ Keyboard ▸ “Press 🌐 key to” → Do Nothing, otherwise macOS starts Dictation on a double tap.")
                     .font(.caption)
                     .foregroundColor(.secondary)

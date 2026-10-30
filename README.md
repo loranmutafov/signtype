@@ -33,13 +33,14 @@ CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/build.sh
 
 ## First run
 
-macOS will ask for three permissions. All three are needed.
+macOS will ask for two permissions. Both are needed.
 
 | Permission | Why |
 |---|---|
 | Camera | to see your hands |
-| Accessibility | to type into other apps (synthetic key events) |
-| Input Monitoring | to hear the fn key from any app |
+| Accessibility | to hear the fn key from any app and to type into other apps |
+
+Accessibility covers keyboard event taps too, so no separate Input Monitoring grant is required.
 
 Then one keyboard setting: **System Settings ▸ Keyboard ▸ "Press 🌐 key to" → Do Nothing**.
 By default macOS starts Dictation on a double tap of fn, which gets in the way of a triple tap.

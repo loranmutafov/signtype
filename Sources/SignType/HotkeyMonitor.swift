@@ -2,8 +2,8 @@ import CoreGraphics
 import Foundation
 
 /// Watches the fn (🌐) key globally and fires when it is tapped N times quickly.
-/// Uses a listen-only CGEvent tap on flagsChanged, so it needs Input Monitoring
-/// (and Accessibility for the typing side of the app).
+/// Uses a listen-only CGEvent tap on flagsChanged. Accessibility permission (which the
+/// typing side needs anyway) is sufficient to create it.
 final class FnTripleTapMonitor {
     private let onTriple: () -> Void
     private var tap: CFMachPort?
@@ -27,7 +27,7 @@ final class FnTripleTapMonitor {
         self.onTriple = onTriple
     }
 
-    /// Returns false if the tap could not be created (usually: Input Monitoring not granted).
+    /// Returns false if the tap could not be created (usually: Accessibility not granted).
     @discardableResult
     func start() -> Bool {
         if tap != nil { return true }
