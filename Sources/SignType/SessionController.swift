@@ -50,6 +50,7 @@ final class SessionController: ObservableObject {
     // Camera-queue only.
     private var lastProcessed: CFTimeInterval = 0
     private var lastCapture: CFTimeInterval = 0
+    private var lastDiag: CFTimeInterval = 0
 
     // Main only.
     private var startedAt: CFTimeInterval = 0
@@ -308,6 +309,11 @@ final class SessionController: ObservableObject {
         let motion = MotionFrame(observation: observation, time: now)
         let segment = segmenter.ingest(motion)
         let inMotion = segmenter.isActive
+
+        if now - lastDiag >= 1 {
+            lastDiag = now
+            Log.session.debug("hands=\(observation.hands.count) body=\(observation.body != nil) anchored=\(motion?.anchored ?? false) speed=\(self.segmenter.currentSpeed, format: .fixed(precision: 3)) active=\(inMotion) words=\(self.matcher.counts.values.reduce(0, +))")
+        }
 
         var flash: Flash? = nil
 

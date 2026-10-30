@@ -12,8 +12,22 @@ struct BodyFrame {
     let yAxis: CGPoint
     let scale: Double
 
+    /// Whether this frame came from real body landmarks (false = image-space fallback).
+    let anchored: Bool
+
+    /// Image-space fallback when no body is visible: origin a little below the image centre,
+    /// 1 unit ≈ 0.45 of the image width (roughly a torso in a laptop webcam).
+    init(fallbackFor hand: HandPose) {
+        origin = CGPoint(x: 0.5, y: 0.35)
+        xAxis = CGPoint(x: 1, y: 0)
+        yAxis = CGPoint(x: 0, y: 1)
+        scale = 0.45
+        anchored = false
+    }
+
     init?(body: BodyPose?) {
         guard let body else { return nil }
+        anchored = true
         if let l = body.point(.leftShoulder), let r = body.point(.rightShoulder) {
             let dx = Double(l.x - r.x), dy = Double(l.y - r.y)
             let w = (dx * dx + dy * dy).squareRoot()
@@ -62,8 +76,13 @@ struct MotionFrame {
     let wrists: [CGPoint?]   // body coords, per slot
     let time: CFTimeInterval
 
+    /// True when the body was actually tracked (vs. the image-space fallback).
+    let anchored: Bool
+
     init?(observation: FrameObservation, time: CFTimeInterval) {
-        guard !observation.hands.isEmpty, let frame = BodyFrame(body: observation.body) else { return nil }
+        guard let first = observation.hands.first else { return nil }
+        let frame = BodyFrame(body: observation.body) ?? BodyFrame(fallbackFor: first)
+        anchored = frame.anchored
 
         var slots: [HandPose?] = [nil, nil]
         var unknown: [HandPose] = []
@@ -139,6 +158,8 @@ final class MotionSegmenter {
     private var ema = 0.0
     private var last: MotionFrame?
     private(set) var isActive = false
+    /// Smoothed wrist speed of the latest frame (shoulder widths per frame), for diagnostics.
+    private(set) var currentSpeed = 0.0
 
     func reset() {
         history = []
@@ -155,6 +176,7 @@ final class MotionSegmenter {
         guard let frame else {
             last = nil
             history = []
+            currentSpeed = 0
             return isActive ? finish() : nil
         }
         var speed = 0.0
@@ -167,6 +189,7 @@ final class MotionSegmenter {
         }
         last = frame
         ema = 0.5 * ema + 0.5 * speed
+        currentSpeed = ema
 
         if !isActive {
             if ema > startSpeed {

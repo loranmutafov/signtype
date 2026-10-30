@@ -93,7 +93,8 @@ final class TeachModel: ObservableObject {
     func ingest(segment: MotionSegment) {
         let scores = controller.matcher.scores(segment).prefix(3)
         let ranked = scores.map { "\($0.0) \(String(format: "%.2f", $0.1))" }.joined(separator: "   ")
-        lastSegmentInfo = "Last motion: \(segment.frames.count) frames, path \(String(format: "%.2f", segment.pathLength))" + (ranked.isEmpty ? "" : "  ·  nearest: \(ranked)")
+        let anchor = (segment.frames.first?.anchored ?? false) ? "body" : "no body (image frame)"
+        lastSegmentInfo = "Last motion: \(segment.frames.count) frames, path \(String(format: "%.2f", segment.pathLength)), \(anchor)" + (ranked.isEmpty ? "" : "  ·  nearest: \(ranked)")
 
         guard armed, !wordLabel.isEmpty else { return }
         controller.matcher.add(label: wordLabel, segment: segment)
