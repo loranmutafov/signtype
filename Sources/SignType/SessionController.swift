@@ -309,6 +309,7 @@ final class SessionController: ObservableObject {
         let motion = MotionFrame(observation: observation, time: now)
         let segment = segmenter.ingest(motion)
         let inMotion = segmenter.isActive
+        if segment != nil { matcher.maxDistance = Float(settings.matchDistance) }
 
         if now - lastDiag >= 1 {
             lastDiag = now

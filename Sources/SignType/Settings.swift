@@ -37,6 +37,8 @@ final class Settings: ObservableObject {
     @Published var autoStopSeconds: Double { didSet { d.set(autoStopSeconds, forKey: "autoStopSeconds") } }
     /// How many consecutive frames (≈15 fps) a letter must hold before it is accepted.
     @Published var stableFrames: Int { didSet { d.set(stableFrames, forKey: "stableFrames") } }
+    /// DTW distance below which a motion sign matches a taught word. Lower = stricter.
+    @Published var matchDistance: Double { didSet { d.set(matchDistance, forKey: "matchDistance") } }
 
     static let defaultGemmaModel = "gemma-4-26b-a4b-it"
 
@@ -48,5 +50,7 @@ final class Settings: ObservableObject {
         autoStopSeconds = auto > 0 ? auto : 4
         let stable = d.integer(forKey: "stableFrames")
         stableFrames = stable > 0 ? stable : 6
+        let dist = d.double(forKey: "matchDistance")
+        matchDistance = dist > 0 ? dist : 0.6
     }
 }

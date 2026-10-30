@@ -66,14 +66,17 @@ struct BodyFrame {
 // MARK: - Per-frame motion features
 
 /// One frame of the motion stream: both hands in body coordinates.
-/// Slot 0 = right hand, slot 1 = left hand. 13 numbers per slot:
-///   present, wrist x, wrist y, then five fingertip offsets from the wrist (÷ palm length, ×0.5).
+/// Slot 0 = right hand, slot 1 = left hand. 14 numbers per slot:
+///   present, wrist x, wrist y, five fingertip offsets from the wrist (÷ palm length, ×0.5),
+///   and apparent palm size (a proxy for distance from the camera, so "towards the camera"
+///   signs like THANK-YOU register as motion).
 struct MotionFrame {
-    static let perSlot = 13
+    static let perSlot = 14
     static let length = perSlot * 2
 
     let vector: [Float]
     let wrists: [CGPoint?]   // body coords, per slot
+    let sizes: [Double?]     // palm length in body units, per slot
     let time: CFTimeInterval
 
     /// True when the body was actually tracked (vs. the image-space fallback).
@@ -100,6 +103,7 @@ struct MotionFrame {
 
         var v = [Float](repeating: 0, count: MotionFrame.length)
         var wrists: [CGPoint?] = [nil, nil]
+        var sizes: [Double?] = [nil, nil]
         for (i, hand) in slots.enumerated() {
             guard let hand else {
                 // Absent hand: rest position below the shoulders, so "hand down" ≈ "hand gone".
@@ -122,9 +126,12 @@ struct MotionFrame {
                 v[base + 3 + k * 2] = Float((t.x - w.x) / palm * 0.5)
                 v[base + 4 + k * 2] = Float((t.y - w.y) / palm * 0.5)
             }
+            v[base + 13] = Float(palm)
+            sizes[i] = palm
         }
         vector = v
         self.wrists = wrists
+        self.sizes = sizes
         self.time = time
     }
 }
@@ -143,13 +150,15 @@ struct MotionSegment {
 /// still for a few frames or disappears. Fingerspelling barely moves the wrist, so it does not
 /// trigger; whole-word signs do.
 final class MotionSegmenter {
-    var startSpeed = 0.035     // shoulder widths per frame
-    var stopSpeed = 0.018
+    var startSpeed = 0.03      // shoulder widths per frame (or equivalent size change)
+    var stopSpeed = 0.015
     var stopFrames = 5
     var preRoll = 3
     var minFrames = 6
     var maxFrames = 75
-    var minPathLength = 0.45   // shoulder widths travelled over the whole segment
+    var minPathLength = 0.3    // shoulder widths travelled over the whole segment
+    /// Frames the hand may vanish (e.g. in front of the face) before a segment is cut.
+    var missingGrace = 4
 
     private var history: [MotionFrame] = []
     private var active: [MotionFrame] = []
@@ -157,6 +166,7 @@ final class MotionSegmenter {
     private var path = 0.0
     private var ema = 0.0
     private var last: MotionFrame?
+    private var missing = 0
     private(set) var isActive = false
     /// Smoothed wrist speed of the latest frame (shoulder widths per frame), for diagnostics.
     private(set) var currentSpeed = 0.0
@@ -168,22 +178,33 @@ final class MotionSegmenter {
         path = 0
         ema = 0
         last = nil
+        missing = 0
         isActive = false
     }
 
     /// Returns a completed, qualifying segment when one just ended.
     func ingest(_ frame: MotionFrame?) -> MotionSegment? {
         guard let frame else {
-            last = nil
             history = []
             currentSpeed = 0
-            return isActive ? finish() : nil
+            if isActive {
+                missing += 1
+                if missing <= missingGrace { return nil }
+                return finish()
+            }
+            last = nil
+            return nil
         }
+        missing = 0
         var speed = 0.0
         if let last {
             for i in 0..<2 {
                 if let a = last.wrists[i], let b = frame.wrists[i] {
                     speed = max(speed, Double(hypot(a.x - b.x, a.y - b.y)))
+                }
+                // Moving towards/away from the camera shows up as the palm growing/shrinking.
+                if let sa = last.sizes[i], let sb = frame.sizes[i], sa > 0 {
+                    speed = max(speed, abs(sb - sa) / sa)
                 }
             }
         }
@@ -215,6 +236,7 @@ final class MotionSegmenter {
 
     private func finish() -> MotionSegment? {
         isActive = false
+        missing = 0
         var frames = active
         active = []
         history = []

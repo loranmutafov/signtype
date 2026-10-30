@@ -20,6 +20,17 @@ struct SettingsView: View {
                         .frame(width: 150, alignment: .trailing)
                 }
                 HStack {
+                    Text("Word match threshold")
+                    Slider(value: $settings.matchDistance, in: 0.2...1.5, step: 0.05)
+                    Text(String(format: "%.2f", settings.matchDistance))
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+                Text("Lower is stricter. The Teach ▸ Words tab shows the distance of every sign it sees; set this a little above the distances your own repeats land at.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
                     Text("Auto-stop after no hand for")
                     Slider(value: $settings.autoStopSeconds, in: 2...15, step: 1)
                     Text("\(Int(settings.autoStopSeconds)) s")

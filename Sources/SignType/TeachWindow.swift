@@ -30,6 +30,8 @@ final class TeachModel: ObservableObject {
     @Published var wordStatus = "Type a word, press Record, then perform the sign once."
     @Published var armed = false
     @Published var lastSegmentInfo = ""
+    @Published var lastMatch = ""
+    @Published var lastMatched = false
 
     private var recordUntil: CFTimeInterval = 0
     private var recordedThisRun = 0
@@ -96,6 +98,18 @@ final class TeachModel: ObservableObject {
         let anchor = (segment.frames.first?.anchored ?? false) ? "body" : "no body (image frame)"
         lastSegmentInfo = "Last motion: \(segment.frames.count) frames, path \(String(format: "%.2f", segment.pathLength)), \(anchor)" + (ranked.isEmpty ? "" : "  ·  nearest: \(ranked)")
 
+        controller.matcher.maxDistance = Float(controller.settings.matchDistance)
+        if let m = controller.matcher.match(segment) {
+            lastMatched = true
+            lastMatch = "Matched “\(m.label)”  (distance \(String(format: "%.2f", m.distance)), confidence \(Int(m.confidence * 100))%)"
+        } else if let nearest = scores.first {
+            lastMatched = false
+            lastMatch = "No match. Nearest “\(nearest.0)” at \(String(format: "%.2f", nearest.1)); threshold is \(String(format: "%.2f", controller.settings.matchDistance))."
+        } else {
+            lastMatched = false
+            lastMatch = "No match (no words taught yet)."
+        }
+
         guard armed, !wordLabel.isEmpty else { return }
         controller.matcher.add(label: wordLabel, segment: segment)
         controller.matcher.save()
@@ -147,6 +161,7 @@ final class TeachModel: ObservableObject {
 
 struct TeachView: View {
     @ObservedObject var model: TeachModel
+    @ObservedObject var settings = Settings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -163,7 +178,7 @@ struct TeachView: View {
             }
         }
         .padding(20)
-        .frame(width: 540)
+        .frame(width: 560, height: 700, alignment: .topLeading)
     }
 
     // MARK: Letters tab
@@ -257,39 +272,55 @@ struct TeachView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             GroupBox("Live") {
-                Text(model.lastSegmentInfo.isEmpty ? "No motion segment yet. Move a hand and stop." : model.lastSegmentInfo)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if model.wordCounts.isEmpty {
-                Text("No words taught yet.").foregroundColor(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(model.wordCounts.keys.sorted(), id: \.self) { w in
-                            HStack {
-                                Text(w).font(.headline)
-                                Text("× \(model.wordCounts[w] ?? 0)").foregroundColor(.secondary)
-                                Spacer()
-                                Button("Remove") { model.removeWord(w) }
-                                    .buttonStyle(.borderless)
-                            }
-                            .padding(.vertical, 2)
-                        }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(model.lastMatch.isEmpty ? "Perform a taught sign to test it." : model.lastMatch)
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(model.lastMatch.isEmpty ? .secondary : (model.lastMatched ? .green : .orange))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(model.lastSegmentInfo.isEmpty ? "No motion segment yet. Move a hand and stop." : model.lastSegmentInfo)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Text("Match threshold")
+                        Slider(value: $settings.matchDistance, in: 0.2...1.5, step: 0.05)
+                        Text(String(format: "%.2f", settings.matchDistance))
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(width: 36, alignment: .trailing)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 180)
-                HStack {
-                    Spacer()
-                    Button("Reset all words") { model.clearAllWords() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox("Taught words (\(model.wordCounts.values.reduce(0, +)) recordings)") {
+                if model.wordCounts.isEmpty {
+                    Text("None yet.")
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(model.wordCounts.keys.sorted(), id: \.self) { w in
+                                HStack {
+                                    Text(w).font(.headline)
+                                    Text("× \(model.wordCounts[w] ?? 0)").foregroundColor(.secondary)
+                                    Spacer()
+                                    Button("Remove") { model.removeWord(w) }
+                                        .buttonStyle(.borderless)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 140)
+                    HStack {
+                        Spacer()
+                        Button("Reset all words") { model.clearAllWords() }
+                    }
                 }
             }
 
-            Text("Distances under 0.6 match. If a word keeps reading as “?”, record it again at the speed you actually sign it. Untaught signs fall back to Gemma 4 in Hybrid mode.")
+            Text("If a word keeps reading as “?”, look at its distance above and raise the threshold a little, or record it again at the speed you actually sign it. Untaught signs fall back to Gemma 4 in Hybrid mode.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
