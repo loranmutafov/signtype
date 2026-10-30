@@ -407,15 +407,20 @@ final class SessionController: ObservableObject {
                 Log.session.error("Gemma gloss failed: \(error.localizedDescription)")
             }
             guard let self else { return }
-            self.lock.lock()
-            self.pendingGemma -= 1
-            if !word.isEmpty { self.buffer += word + " " }
-            self.lock.unlock()
-            self.output.resolve(slot, with: word.isEmpty ? "" : word + " ")
-            let shown: Flash = word.isEmpty ? .unknown : .word(word)
-            DispatchQueue.main.async { self.overlay?.flash(shown) }
+            self.completeGemmaLookup(slot: slot, word: word)
         }
         return .thinking
+    }
+
+    /// Synchronous tail of a Hybrid lookup (keeps NSLock out of async contexts).
+    private func completeGemmaLookup(slot: Int, word: String) {
+        lock.lock()
+        pendingGemma -= 1
+        if !word.isEmpty { buffer += word + " " }
+        lock.unlock()
+        output.resolve(slot, with: word.isEmpty ? "" : word + " ")
+        let shown: Flash = word.isEmpty ? .unknown : .word(word)
+        DispatchQueue.main.async { [weak self] in self?.overlay?.flash(shown) }
     }
 
     static func alert(_ title: String, _ message: String) {
