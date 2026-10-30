@@ -49,7 +49,8 @@ enum Permissions {
         func mark(_ b: Bool) -> String { b ? "✅" : "❌" }
         return """
         \(mark(cameraStatus == .authorized)) Camera
-        \(mark(accessibilityTrusted)) Accessibility (fn key triple-tap + typing into other apps)
+        \(mark(accessibilityTrusted)) Accessibility (typing into other apps; usually also the fn tap)
+        \(mark(inputMonitoringGranted)) Input Monitoring (fn tap fallback if Accessibility alone is not enough)
         """
     }
 }

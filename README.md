@@ -52,7 +52,7 @@ macOS will ask for two permissions. Both are needed.
 | Camera | to see your hands |
 | Accessibility | to hear the fn key from any app and to type into other apps |
 
-Accessibility covers keyboard event taps too, so no separate Input Monitoring grant is required.
+Accessibility normally covers the keyboard event tap too. If the menu says the fn hotkey is OFF after granting it, also grant Input Monitoring (the app asks for it automatically in that case) and relaunch.
 
 Then one keyboard setting: **System Settings ▸ Keyboard ▸ "Press 🌐 key to" → Do Nothing**.
 By default macOS starts Dictation on a double tap of fn, which gets in the way of a triple tap.

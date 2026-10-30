@@ -22,22 +22,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
 
     private var toggleItem: NSMenuItem!
+    private var hotkeyItem: NSMenuItem!
     private var modeItems: [Mode: NSMenuItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
         controller.onActivityChange = { [weak self] _ in self?.refreshMenu() }
 
-        // Accessibility covers both the global fn-key tap and typing into other apps.
+        // Accessibility is needed for typing into other apps and normally also lets us create
+        // the fn-key event tap. If the tap still cannot be created, ask for Input Monitoring too.
         if !Permissions.accessibilityTrusted { Permissions.requestAccessibility() }
+        Log.hotkey.info("launch: accessibility=\(Permissions.accessibilityTrusted) inputMonitoring=\(Permissions.inputMonitoringGranted)")
 
         hotkey = FnTripleTapMonitor { [weak self] in self?.controller.toggle() }
-        if hotkey?.start() != true {
-            // Accessibility not granted yet – keep retrying until the user flips the switch.
+        if hotkey?.start() == true {
+            Log.hotkey.info("fn event tap created")
+        } else {
+            Log.hotkey.error("fn event tap could not be created; requesting Input Monitoring and retrying")
+            Permissions.requestInputMonitoring()
             hotkeyRetry = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] t in
-                if self?.hotkey?.start() == true {
+                guard let self else { t.invalidate(); return }
+                if self.hotkey?.start() == true {
+                    Log.hotkey.info("fn event tap created after retry")
                     t.invalidate()
-                    self?.refreshMenu()
+                    self.refreshMenu()
                 }
             }
         }
@@ -69,9 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         toggleItem = NSMenuItem(title: "Start signing", action: #selector(toggleSigning), keyEquivalent: "")
         toggleItem.target = self
         menu.addItem(toggleItem)
-        let hint = NSMenuItem(title: "Tap fn (🌐) three times from any app", action: nil, keyEquivalent: "")
-        hint.isEnabled = false
-        menu.addItem(hint)
+        hotkeyItem = NSMenuItem(title: "Tap fn (🌐) three times from any app", action: nil, keyEquivalent: "")
+        hotkeyItem.isEnabled = false
+        menu.addItem(hotkeyItem)
         menu.addItem(.separator())
 
         for mode in Mode.allCases {
@@ -121,8 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             button.contentTintColor = controller.activity == .signing ? .systemGreen : nil
         }
-        if hotkey?.isRunning != true {
-            toggleItem.title += "  (fn hotkey needs Accessibility)"
+        if hotkey?.isRunning == true {
+            hotkeyItem.title = "fn ×3 hotkey: active"
+        } else {
+            hotkeyItem.title = "fn ×3 hotkey: OFF – grant Accessibility or Input Monitoring"
         }
     }
 
