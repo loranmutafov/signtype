@@ -94,8 +94,16 @@ struct BodyPose {
     var points: [CGPoint]
     var confidences: [Float]
 
-    func point(_ j: BodyJoint, minConfidence: Float = 0.3) -> CGPoint? {
+    func point(_ j: BodyJoint, minConfidence: Float = 0.2) -> CGPoint? {
         confidences[j.rawValue] >= minConfidence ? points[j.rawValue] : nil
+    }
+
+    /// Compact confidence readout for logs: nose / left shoulder / right shoulder.
+    var summary: String {
+        let n = confidences[BodyJoint.nose.rawValue]
+        let l = confidences[BodyJoint.leftShoulder.rawValue]
+        let r = confidences[BodyJoint.rightShoulder.rawValue]
+        return String(format: "nose %.2f lsh %.2f rsh %.2f", n, l, r)
     }
 }
 
@@ -167,9 +175,9 @@ final class PoseTracker {
                 conf[joint.rawValue] = p.confidence
             }
         }
-        let anyFace = conf[BodyJoint.nose.rawValue] > 0.3
-        let shoulders = conf[BodyJoint.leftShoulder.rawValue] > 0.3 && conf[BodyJoint.rightShoulder.rawValue] > 0.3
-        guard anyFace || shoulders else { return nil }
+        // Vision reports low-ish confidences for partially visible upper bodies; be lenient and
+        // let consumers pick their own threshold.
+        guard conf.max() ?? 0 > 0.1 else { return nil }
         return BodyPose(points: points, confidences: conf)
     }
 }

@@ -178,7 +178,7 @@ final class OverlayPanel: NSPanel {
         if let b = observation?.body {
             let pts = b.points.map(layerPoint)
             for (x, y) in BodyJoint.bones {
-                guard b.confidences[x.rawValue] > 0.3, b.confidences[y.rawValue] > 0.3 else { continue }
+                guard b.confidences[x.rawValue] > 0.15, b.confidences[y.rawValue] > 0.15 else { continue }
                 bodyPath.move(to: pts[x.rawValue])
                 bodyPath.addLine(to: pts[y.rawValue])
             }

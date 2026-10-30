@@ -312,7 +312,8 @@ final class SessionController: ObservableObject {
 
         if now - lastDiag >= 1 {
             lastDiag = now
-            Log.session.debug("hands=\(observation.hands.count) body=\(observation.body != nil) anchored=\(motion?.anchored ?? false) speed=\(self.segmenter.currentSpeed, format: .fixed(precision: 3)) active=\(inMotion) words=\(self.matcher.counts.values.reduce(0, +))")
+            let bodyInfo = observation.body?.summary ?? "none"
+            Log.session.debug("hands=\(observation.hands.count) body=[\(bodyInfo)] anchored=\(motion?.anchored ?? false) speed=\(self.segmenter.currentSpeed, format: .fixed(precision: 3)) active=\(inMotion) words=\(self.matcher.counts.values.reduce(0, +))")
         }
 
         var flash: Flash? = nil
