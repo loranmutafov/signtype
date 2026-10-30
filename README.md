@@ -111,3 +111,15 @@ Source map:
 - Only fingerspelling. Full-sign (word-level) recognition on-device would need a sequence model over landmark windows; the Gemma mode is the shortcut for that today.
 - Typing goes through Accessibility events, so secure text fields (password prompts) ignore it.
 - The overlay is pinned bottom-right of the main display. Drag it anywhere; it does not steal focus.
+
+## Debugging
+
+Every fn event the app sees, every start/stop and why, goes to unified logging:
+
+```bash
+log stream --predicate 'subsystem == "dev.loran.signtype"' --level debug
+```
+
+Some keyboards deliver more than one fn event per press; the hotkey monitor de-duplicates
+those and ignores fn for a second after each trigger, and a session cannot be stopped by the
+hotkey within its first 1.5 s.

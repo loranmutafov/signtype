@@ -66,13 +66,26 @@ final class SessionController: ObservableObject {
 
     // MARK: - Public controls (main thread)
 
+    /// Hotkey entry point. A stop that arrives within the first moments of a session is
+    /// ignored so a stray extra fn event cannot cancel what it just started.
     func toggle() {
         switch activity {
-        case .idle: startSigning()
-        case .signing: stopSigning()
-        case .teaching, .processing: break
+        case .idle:
+            Log.session.info("toggle → start")
+            startSigning()
+        case .signing:
+            if CACurrentMediaTime() - startedAt < minimumSessionSeconds {
+                Log.session.info("toggle → stop ignored (session just started)")
+                return
+            }
+            Log.session.info("toggle → stop")
+            stopSigning()
+        case .teaching, .processing:
+            break
         }
     }
+
+    var minimumSessionSeconds: Double = 1.5
 
     func startSigning() {
         guard activity == .idle else { return }
@@ -105,6 +118,7 @@ final class SessionController: ObservableObject {
 
     func stopSigning() {
         guard activity == .signing else { return }
+        Log.session.info("stopSigning after \(CACurrentMediaTime() - self.startedAt, format: .fixed(precision: 1))s")
         idleTimer?.invalidate()
         idleTimer = nil
         camera.stop()
@@ -218,9 +232,13 @@ final class SessionController: ObservableObject {
             let seen = self.lastHandSeen
             self.lock.unlock()
             if seen > 0 {
-                if now - seen > self.settings.autoStopSeconds { self.stopSigning() }
+                if now - seen > self.settings.autoStopSeconds {
+                    Log.session.info("auto-stop: no hand for \(self.settings.autoStopSeconds)s")
+                    self.stopSigning()
+                }
             } else if now - self.startedAt > 20 {
                 // Never saw a hand – don't leave the camera on forever.
+                Log.session.info("auto-stop: never saw a hand")
                 self.stopSigning()
             }
         }
