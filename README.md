@@ -37,8 +37,11 @@ the script picks it up. You can also force an identity:
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/build.sh
 ```
 
-After switching identities, remove SignType from Accessibility and Camera in System Settings and
-grant it once more; from then on grants survive rebuilds.
+After switching identities, clear the stale grants once and re-grant; from then on they survive rebuilds:
+
+```bash
+scripts/reset-permissions.sh
+```
 
 ## First run
 

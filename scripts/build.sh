@@ -60,6 +60,7 @@ fi
 
 echo "▸ codesign ($IDENTITY)"
 codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
+codesign -dv "$APP" 2>&1 | grep -E "^(Signature|Authority)=" | head -2 | sed 's/^/  /'
 
 echo
 echo "Built $APP  (build $STAMP)"
