@@ -12,8 +12,27 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-release}"
-IDENTITY="${CODESIGN_IDENTITY:--}"
 APP="build/SignType.app"
+
+# Pick a signing identity. macOS ties Accessibility/Camera grants to the code signature, so an
+# ad-hoc signature ("-") means re-granting after EVERY build. Any stable identity fixes that:
+# an Apple Development certificate, or a free self-signed one named "SignType Dev"
+# (Keychain Access ▸ Certificate Assistant ▸ Create a Certificate ▸ type: Code Signing).
+if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+  IDENTITY="$CODESIGN_IDENTITY"
+else
+  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -oE '"(SignType Dev|Apple Development: [^"]+|Developer ID Application: [^"]+)"' \
+    | head -1 | tr -d '"' || true)"
+  if [[ -z "$IDENTITY" ]]; then
+    IDENTITY="-"
+    echo "⚠ No signing identity found: using ad-hoc signing. macOS will forget Accessibility"
+    echo "  and Camera grants on every rebuild. Create a free one (takes a minute):"
+    echo "  Keychain Access ▸ Certificate Assistant ▸ Create a Certificate…"
+    echo "  Name: SignType Dev · Identity Type: Self Signed Root · Certificate Type: Code Signing"
+    echo "  Then rebuild; this script picks it up automatically."
+  fi
+fi
 
 echo "▸ swift build -c $CONFIG"
 swift build -c "$CONFIG"

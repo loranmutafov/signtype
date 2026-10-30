@@ -24,12 +24,21 @@ scripts/build.sh
 open build/SignType.app
 ```
 
-If you have an Apple Development certificate, sign with it so macOS does not forget your permission
-grants after every rebuild (ad-hoc signatures change on each build):
+**Signing matters.** macOS ties the Accessibility and Camera grants to the app's code signature. With
+ad-hoc signing the signature changes on every build, so the app is "new" each time and asks again
+(the toggle in System Settings looks on, but no longer matches). The build script therefore looks for
+a stable identity: an `Apple Development` certificate if you have one, or a free self-signed one.
+
+To make the free one, once: Keychain Access ▸ Certificate Assistant ▸ Create a Certificate…
+Name `SignType Dev`, Identity Type `Self Signed Root`, Certificate Type `Code Signing`. Rebuild;
+the script picks it up. You can also force an identity:
 
 ```bash
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/build.sh
 ```
+
+After switching identities, remove SignType from Accessibility and Camera in System Settings and
+grant it once more; from then on grants survive rebuilds.
 
 ## First run
 
