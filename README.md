@@ -159,3 +159,8 @@ log stream --predicate 'subsystem == "dev.loran.signtype"' --level debug
 Some keyboards deliver more than one fn event per press; the hotkey monitor de-duplicates
 those and ignores fn for a second after each trigger, and a session cannot be stopped by the
 hotkey within its first 1.5 s.
+
+## Licence
+
+GNU General Public License v3.0 or later. See [LICENCE](LICENCE). Derivatives must stay open source,
+and every contributor grants users a licence to any patents their contributions would otherwise infringe.
