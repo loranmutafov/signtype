@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import QuartzCore
 
 /// Small always-on-top camera preview with the hand skeleton, the current letter and the
 /// running transcript. It never takes keyboard focus, so typed events keep going to
@@ -8,11 +9,14 @@ final class OverlayPanel: NSPanel {
     private let previewLayer: AVCaptureVideoPreviewLayer
     private let bones = CAShapeLayer()
     private let tips = CAShapeLayer()
+    private let body = CAShapeLayer()
     private let ring = CAShapeLayer()
     private let ringTrack = CAShapeLayer()
     private let letterLabel = NSTextField(labelWithString: "")
+    private let wordLabel = NSTextField(labelWithString: "")
     private let textLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
+    private var flashUntil: CFTimeInterval = 0
 
     private static let size = NSSize(width: 340, height: 336)
     private static let videoRect = NSRect(x: 10, y: 86, width: 320, height: 240)
@@ -55,6 +59,14 @@ final class OverlayPanel: NSPanel {
         }
         videoView.layer?.addSublayer(previewLayer)
 
+        body.frame = previewLayer.bounds
+        body.strokeColor = NSColor.systemTeal.withAlphaComponent(0.7).cgColor
+        body.fillColor = nil
+        body.lineWidth = 2
+        body.lineCap = .round
+        body.lineJoin = .round
+        previewLayer.addSublayer(body)
+
         bones.frame = previewLayer.bounds
         bones.strokeColor = NSColor.systemGreen.withAlphaComponent(0.9).cgColor
         bones.fillColor = nil
@@ -91,6 +103,17 @@ final class OverlayPanel: NSPanel {
         letterLabel.textColor = .white
         root.addSubview(letterLabel)
 
+        // Word / status flash over the video (matched sign, "?", "…").
+        wordLabel.frame = NSRect(x: 20, y: Self.videoRect.minY + 12, width: 300, height: 40)
+        wordLabel.alignment = .center
+        wordLabel.font = .systemFont(ofSize: 26, weight: .bold)
+        wordLabel.textColor = .white
+        wordLabel.wantsLayer = true
+        wordLabel.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        wordLabel.layer?.cornerRadius = 10
+        wordLabel.isHidden = true
+        root.addSubview(wordLabel)
+
         textLabel.frame = NSRect(x: 88, y: 40, width: 242, height: 32)
         textLabel.font = .monospacedSystemFont(ofSize: 20, weight: .medium)
         textLabel.textColor = .white
@@ -122,44 +145,77 @@ final class OverlayPanel: NSPanel {
         statusLabel.stringValue = s
     }
 
-    func update(pose: HandPose?, prediction: Prediction?, holdProgress: Double, text: String) {
+    /// Vision: origin bottom-left. Capture-device space: origin top-left.
+    private func layerPoint(_ p: CGPoint) -> CGPoint {
+        previewLayer.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: p.x, y: 1 - p.y))
+    }
+
+    func update(observation: FrameObservation?, prediction: Prediction?, holdProgress: Double, text: String, inMotion: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
-        if let pose {
-            let pts = pose.points.map { p -> CGPoint in
-                // Vision: origin bottom-left. Capture-device space: origin top-left.
-                previewLayer.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: p.x, y: 1 - p.y))
-            }
-            let path = CGMutablePath()
+        let handPath = CGMutablePath()
+        let dots = CGMutablePath()
+        for hand in observation?.hands ?? [] {
+            let pts = hand.points.map(layerPoint)
             for (a, b) in Joint.bones {
-                guard pose.confidences[a.rawValue] > 0.2, pose.confidences[b.rawValue] > 0.2 else { continue }
-                path.move(to: pts[a.rawValue])
-                path.addLine(to: pts[b.rawValue])
+                guard hand.confidences[a.rawValue] > 0.2, hand.confidences[b.rawValue] > 0.2 else { continue }
+                handPath.move(to: pts[a.rawValue])
+                handPath.addLine(to: pts[b.rawValue])
             }
-            bones.path = path
-
-            let dots = CGMutablePath()
             for j in [Joint.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip, .wrist] {
-                guard pose.confidences[j.rawValue] > 0.2 else { continue }
+                guard hand.confidences[j.rawValue] > 0.2 else { continue }
                 let p = pts[j.rawValue]
                 dots.addEllipse(in: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
             }
-            tips.path = dots
-        } else {
-            bones.path = nil
-            tips.path = nil
         }
+        bones.path = handPath
+        tips.path = dots
+        bones.strokeColor = (inMotion ? NSColor.systemOrange : NSColor.systemGreen).withAlphaComponent(0.9).cgColor
 
-        if let prediction {
+        let bodyPath = CGMutablePath()
+        if let b = observation?.body {
+            let pts = b.points.map(layerPoint)
+            for (x, y) in BodyJoint.bones {
+                guard b.confidences[x.rawValue] > 0.3, b.confidences[y.rawValue] > 0.3 else { continue }
+                bodyPath.move(to: pts[x.rawValue])
+                bodyPath.addLine(to: pts[y.rawValue])
+            }
+        }
+        body.path = bodyPath
+
+        if inMotion {
+            letterLabel.stringValue = "~"
+            letterLabel.textColor = NSColor.systemOrange
+        } else if let prediction {
             letterLabel.stringValue = prediction.label
             letterLabel.textColor = prediction.confidence >= 0.55 ? .white : NSColor.white.withAlphaComponent(0.35)
         } else {
             letterLabel.stringValue = ""
         }
-        ring.strokeEnd = CGFloat(holdProgress)
+        ring.strokeEnd = CGFloat(inMotion ? 0 : holdProgress)
         textLabel.stringValue = text.isEmpty ? "…" : String(text.suffix(18))
+
+        if !wordLabel.isHidden, CACurrentMediaTime() > flashUntil {
+            wordLabel.isHidden = true
+        }
+    }
+
+    /// Briefly show a matched word, "?" for an unmatched sign, or "…" while Gemma thinks.
+    func flash(_ f: SessionController.Flash) {
+        let text: String
+        let color: NSColor
+        var duration: CFTimeInterval = 1.6
+        switch f {
+        case .word(let w): text = w; color = .systemGreen
+        case .unknown: text = "?"; color = .systemOrange
+        case .thinking: text = "…"; color = .systemTeal; duration = 8
+        }
+        wordLabel.stringValue = text
+        wordLabel.layer?.backgroundColor = color.withAlphaComponent(0.7).cgColor
+        wordLabel.isHidden = false
+        flashUntil = CACurrentMediaTime() + duration
     }
 
     private func positionBottomRight() {

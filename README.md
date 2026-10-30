@@ -5,9 +5,13 @@ Tap **fn** three times. The camera comes on in a small floating window. Sign to 
 A macOS menu-bar app, in the spirit of Wispr Flow but for sign language. Everything runs on-device
 (Apple's Vision hand-pose model plus a small classifier), with an optional Gemma 4 cloud mode.
 
-> Hackathon-grade. ASL **fingerspelling** of the 24 static letters (no J or Z yet: they need motion).
-> Out of the box it uses hand-written geometry rules, which are serviceable but fussy. Spend two
-> minutes in **Teach letters…** and it uses *your* hand as the reference instead, which is much better.
+> Hackathon-grade. Two recognisers, both on-device:
+> * **Fingerspelling** of the 24 static letters out of the box, from hand-written geometry rules.
+>   Spend two minutes in **Teach ▸ Letters** and it uses *your* hand as the reference instead, which is much better.
+> * **Whole-word signs** you teach it: perform "hello" a few times in **Teach ▸ Words** and it will
+>   recognise it from the motion of both hands relative to your shoulders and face.
+>
+> Anything that moves but matches no taught word is dropped, or, in **Hybrid** mode, sent to Gemma 4.
 
 ## Build (on your Mac)
 
@@ -52,40 +56,60 @@ Open **Settings…** from the menu-bar hand icon to see which permissions are gr
    - Space: keep the hand out of view for a little over a second.
 4. Tap fn three times to finish, or just lower your hand for 4 seconds and it stops on its own.
 
-Three modes, chosen from the menu:
+Whole-word signs you have taught are typed as words (with a trailing space) the moment your hands come to rest.
+While a hand is moving the skeleton turns orange and letters are paused, so a sign never gets typed as a
+jumble of letters on the way.
 
-- **Live letters (on-device)**: each letter is typed the moment it is accepted. Most fun; most garbage if a letter misreads.
-- **Batch, type at the end (on-device)**: letters accumulate in the preview, and everything is typed when you stop.
-- **Batch via Gemma 4 (cloud)**: about two frames per second are kept while you sign. When you stop, the frames plus the on-device guess go to Gemma 4 through the Gemini API, and its transcript is typed. Needs an API key in Settings. Model defaults to `gemma-4-26b-a4b-it`; `gemma-4-31b-it` is the bigger one. This mode is the only one that sends anything off the machine.
+Four modes, chosen from the menu:
 
-## Teach it your hand
+- **Live (on-device)**: letters and taught words are typed as they are recognised. Unknown motion signs are dropped ("?" in the preview).
+- **Batch, type at the end (on-device)**: same recognition, but everything accumulates in the preview and is typed when you stop.
+- **Hybrid: on-device, Gemma 4 for unknown signs**: like Live, but a motion sign that matches none of your taught words is sent to Gemma 4 (just that second or two of frames, plus the text so far as context). Gemma's word is typed in the right place; if it answers "?" nothing is typed. Output stays in signing order even while a lookup is in flight.
+- **Batch via Gemma 4 (cloud)**: about two frames per second of the whole session go to Gemma 4 when you stop, with the on-device transcript as a hint.
 
-Menu ▸ **Teach letters…**. Pick a letter, hold the sign, press Record. Two seconds of hand poses are stored.
+Gemma modes need an API key in Settings. The model defaults to `gemma-4-26b-a4b-it`; `gemma-4-31b-it` is the bigger one.
+Those two modes are the only ones that send anything off the machine, and Hybrid only sends the unknown bits.
+
+## Teach it your signing
+
+Menu ▸ **Teach letters…** opens a window with two tabs.
+
+**Letters.** Pick a letter, hold the sign, press Record. Two seconds of hand poses are stored.
 Do two or three recordings per letter from slightly different angles and distances. Taught letters take
-priority over the built-in rules. Samples are plain JSON in `~/Library/Application Support/SignType/templates.json`,
-so they are easy to share or reset.
+priority over the built-in rules. The tab shows the live prediction and the rule classifier's top three
+guesses, which is the quickest way to debug a letter that keeps misreading.
 
-The teach window shows the live prediction and the rule classifier's top three guesses, which is also the
-quickest way to debug a letter that keeps misreading.
+**Words.** Type the word, press Record sign, perform the sign once at normal speed, and come to a clear stop.
+The app waits for a motion segment (a hand travelling at least about half a shoulder width, then stopping)
+and stores the trajectory of both hands in shoulder-centred coordinates, resampled to 30 steps. Record each
+word two or three times. Keep your shoulders in frame; if they are not, it falls back to your ears and nose
+to place the frame. The tab shows every segment it sees with its nearest taught words and their distances,
+so you can tell whether a sign is being segmented at all and how close it is to matching.
+
+Samples are plain JSON in `~/Library/Application Support/SignType/` (`templates.json` for letters,
+`motions.json` for words), easy to share with a teammate or reset.
 
 ## How it works
 
 ```
-fn ×3 (CGEvent tap) ─▶ AVCaptureSession 640×480
-                         │ ~15 fps
+fn ×3 (CGEvent tap) ─▶ AVCaptureSession 640×480, ~15 fps
                          ▼
-             Vision VNDetectHumanHandPoseRequest  (21 landmarks, on-device)
+       Vision: hand pose ×2 (21 landmarks each) + body pose (upper body), on-device
+                         │
+         ┌───────────────┴────────────────────┐
+         ▼                                    ▼
+ HandFeatures (primary hand)        MotionFrame (both hands in a shoulder-centred
+ wrist-centred, palm-scaled,        frame: wrist position + fingertip layout)
+ rotated upright, mirrored                    ▼
+         ▼                          MotionSegmenter: wrist speed → "a sign happened"
+ Classifier: kNN over taught                  ▼
+ samples, else geometry rules       MotionMatcher: DTW vs taught templates
+         ▼                                    │ no match + Hybrid mode
+ Decoder: stable-frame letters,               ▼
+ paused while hands move            Gemma 4: frames of that segment → word, or "?"
+         └───────────────┬────────────────────┘
                          ▼
-             HandFeatures: wrist-centred, palm-length-scaled, rotated upright,
-                           mirrored for left hands  (+ real on-screen orientation)
-                         ▼
-             Classifier: kNN over your taught samples, falling back to
-                         fuzzy geometry rules for the 24 static letters
-                         ▼
-             Decoder: letter accepted after N stable frames, gap for repeats,
-                      space after ~1.2 s with no hand
-                         ▼
-             Typist: CGEvent keyboard events with a unicode payload → frontmost app
+             OutputQueue keeps signing order ─▶ Typist: CGEvent unicode key events
 ```
 
 Source map:
@@ -94,9 +118,10 @@ Source map:
 |---|---|
 | `HotkeyMonitor.swift` | fn triple-tap via a listen-only CGEvent tap |
 | `CameraSession.swift` | capture session, JPEG encoder for the cloud path |
-| `HandPoseTracker.swift` | Vision hand pose → 21 points |
-| `HandFeatures.swift` | normalisation and geometry helpers |
-| `Classifier.swift` | rule classifier, kNN, ensemble |
+| `HandPoseTracker.swift` | Vision hand pose (two hands) + body pose → `FrameObservation` |
+| `HandFeatures.swift` | letter normalisation and geometry helpers |
+| `Classifier.swift` | rule classifier, kNN, ensemble (letters) |
+| `MotionSigns.swift` | body frame, motion features, segmenter, DTW matcher, ordered output queue (words) |
 | `Decoder.swift` | temporal smoothing into letters and spaces |
 | `Typist.swift` | synthetic typing |
 | `SessionController.swift` | glues it together, modes, auto-stop |
@@ -106,9 +131,10 @@ Source map:
 
 ## Known limits and next steps
 
-- J and Z are motion letters. Easiest add: track the index-tip trajectory while I or D is held, match a hook or a zigzag.
-- Rules are tuned blind. If a letter is stubborn, teach it; then look at the rule scores in the teach window and adjust the thresholds in `Classifier.swift`.
-- Only fingerspelling. Full-sign (word-level) recognition on-device would need a sequence model over landmark windows; the Gemma mode is the shortcut for that today.
+- J and Z are motion letters: teach them on the Words tab as "j" and "z" (they will be typed with a trailing space, which is wrong mid-word; a per-word "no space" flag is a small follow-up).
+- Letter rules are tuned blind. If a letter is stubborn, teach it; then look at the rule scores in the teach window and adjust the thresholds in `Classifier.swift`.
+- Word recognition is template matching, so it only knows signs you have taught it (realistically a few dozen). Segmentation thresholds (`MotionSegmenter`) and the match distance (`MotionMatcher.maxDistance`, 0.6) were set without a camera; the Words tab prints every segment's distance so they are quick to tune.
+- No facial expression or mouth shape, which carry grammar in real ASL.
 - Typing goes through Accessibility events, so secure text fields (password prompts) ignore it.
 - The overlay is pinned bottom-right of the main display. Drag it anywhere; it does not steal focus.
 

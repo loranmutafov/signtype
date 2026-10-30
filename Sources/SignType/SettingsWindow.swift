@@ -31,7 +31,7 @@ struct SettingsView: View {
             Section("Gemma 4 (cloud, optional)") {
                 SecureField("Gemini API key", text: $settings.gemmaApiKey)
                 TextField("Model", text: $settings.gemmaModel)
-                Text("Used only in the “Batch via Gemma 4” mode. About two frames per second are sent when you stop signing, together with the on-device guess as a hint. Models: gemma-4-26b-a4b-it (faster) or gemma-4-31b-it.")
+                Text("Used by “Batch via Gemma 4” (the whole session is sent when you stop) and by “Hybrid” (only the frames of a motion sign that none of your taught words matched are sent, with the text so far as context). Models: gemma-4-26b-a4b-it (faster) or gemma-4-31b-it.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

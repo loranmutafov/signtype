@@ -38,6 +38,24 @@ final class Decoder {
         spaceEmitted = true
     }
 
+    /// The hand is moving (a whole-word sign in progress): forget any half-held letter but
+    /// do not count this as "no hand" for the space logic.
+    func pause() {
+        current = nil
+        currentCount = 0
+        noHandFrames = 0
+    }
+
+    /// Something else (a word) was just emitted with its own trailing space.
+    func markExternalOutput() {
+        current = nil
+        currentCount = 0
+        lastEmitted = nil
+        gap = 0
+        noHandFrames = 0
+        spaceEmitted = true
+    }
+
     func ingest(_ p: Prediction?) -> DecodeEvent? {
         let label: String? = {
             guard let p, p.confidence >= minConfidence else { return nil }

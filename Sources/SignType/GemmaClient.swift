@@ -20,16 +20,42 @@ struct GemmaClient {
         }
     }
 
+    /// Batch mode: transcribe a whole signing session.
     func transcribe(frames: [Data], hint: String) async throws -> String {
-        var parts: [[String: Any]] = [["text": Self.prompt(hint: hint, frameCount: frames.count)]]
+        let text = try await generate(prompt: Self.prompt(hint: hint, frameCount: frames.count), frames: frames, maxTokens: 256)
+        let cleaned = Self.clean(text)
+        guard !cleaned.isEmpty else { throw GemmaError.noText }
+        return cleaned
+    }
+
+    /// Hybrid mode: identify ONE sign from a short burst of frames. Returns "" when Gemma
+    /// says it is not a legible sign.
+    func gloss(frames: [Data], contextBefore: String) async throws -> String {
+        var p = """
+        You are given \(frames.count) sequential webcam frames, roughly four per second, covering a single \
+        American Sign Language sign performed by a person at their laptop. Identify the sign and reply \
+        with its English meaning as one or two lowercase words (for example "hello", "thank you", "help").
+        """
+        let ctx = contextBefore.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ctx.isEmpty {
+            p += "\n\nThe text they had already written before this sign was: \"\(ctx.suffix(80))\"."
+        }
+        p += "\n\nReply with ONLY the word(s). If the frames do not show a legible, deliberate sign (for example the person is just adjusting their hair or reaching for something), reply with exactly: ?"
+        let text = try await generate(prompt: p, frames: frames, maxTokens: 16)
+        let cleaned = Self.clean(text).lowercased()
+        if cleaned.isEmpty || cleaned == "?" || cleaned.hasPrefix("?") || cleaned.count > 40 { return "" }
+        return cleaned
+    }
+
+    private func generate(prompt: String, frames: [Data], maxTokens: Int) async throws -> String {
+        var parts: [[String: Any]] = [["text": prompt]]
         for f in frames {
             parts.append(["inline_data": ["mime_type": "image/jpeg", "data": f.base64EncodedString()]])
         }
         let body: [String: Any] = [
             "contents": [["role": "user", "parts": parts]],
-            "generationConfig": ["temperature": 0.2, "maxOutputTokens": 256],
+            "generationConfig": ["temperature": 0.2, "maxOutputTokens": maxTokens],
         ]
-
         guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
             throw GemmaError.badResponse
         }
@@ -51,10 +77,7 @@ struct GemmaClient {
               let outParts = content["parts"] as? [[String: Any]] else {
             throw GemmaError.badResponse
         }
-        let text = outParts.compactMap { $0["text"] as? String }.joined()
-        let cleaned = Self.clean(text)
-        guard !cleaned.isEmpty else { throw GemmaError.noText }
-        return cleaned
+        return outParts.compactMap { $0["text"] as? String }.joined()
     }
 
     private static func prompt(hint: String, frameCount: Int) -> String {

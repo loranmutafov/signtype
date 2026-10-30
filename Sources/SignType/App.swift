@@ -147,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let model = TeachModel(controller: controller)
         teachModel = model
         controller.onFeatures = { [weak model] f, p in model?.ingest(features: f, prediction: p) }
+        controller.onSegment = { [weak model] s in model?.ingest(segment: s) }
 
         let w = NSWindow(contentViewController: NSHostingController(rootView: TeachView(model: model)))
         w.title = "Teach SignType"
@@ -179,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if w === teachWindow {
             controller.stopTeaching()
             controller.onFeatures = nil
+            controller.onSegment = nil
             teachWindow = nil
             teachModel = nil
         } else if w === settingsWindow {

@@ -48,31 +48,94 @@ enum Joint: Int, CaseIterable {
     ]
 }
 
+/// Upper-body joints we keep from Vision's body-pose model.
+enum BodyJoint: Int, CaseIterable {
+    case nose = 0
+    case leftEye, rightEye, leftEar, rightEar
+    case neck, leftShoulder, rightShoulder
+    case leftElbow, rightElbow, leftWrist, rightWrist
+
+    var visionName: VNHumanBodyPoseObservation.JointName {
+        switch self {
+        case .nose: return .nose
+        case .leftEye: return .leftEye
+        case .rightEye: return .rightEye
+        case .leftEar: return .leftEar
+        case .rightEar: return .rightEar
+        case .neck: return .neck
+        case .leftShoulder: return .leftShoulder
+        case .rightShoulder: return .rightShoulder
+        case .leftElbow: return .leftElbow
+        case .rightElbow: return .rightElbow
+        case .leftWrist: return .leftWrist
+        case .rightWrist: return .rightWrist
+        }
+    }
+
+    static let bones: [(BodyJoint, BodyJoint)] = [
+        (.nose, .leftEye), (.nose, .rightEye), (.leftEye, .leftEar), (.rightEye, .rightEar),
+        (.nose, .neck), (.neck, .leftShoulder), (.neck, .rightShoulder),
+        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+        (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
+    ]
+}
+
 struct HandPose {
     /// 21 points in Vision's normalized image space (origin bottom-left, un-mirrored camera frame).
     var points: [CGPoint]
     var confidences: [Float]
     var isLeft: Bool
+    var chiralityKnown: Bool
+    /// Mean confidence, used to pick the primary hand for fingerspelling.
+    var quality: Float { confidences.reduce(0, +) / Float(max(confidences.count, 1)) }
 }
 
-/// Runs Apple's on-device hand pose model. Works on any Apple Silicon or Intel Mac on macOS 11+.
-final class HandPoseTracker {
-    private let request: VNDetectHumanHandPoseRequest = {
+struct BodyPose {
+    var points: [CGPoint]
+    var confidences: [Float]
+
+    func point(_ j: BodyJoint, minConfidence: Float = 0.3) -> CGPoint? {
+        confidences[j.rawValue] >= minConfidence ? points[j.rawValue] : nil
+    }
+}
+
+/// Everything we extract from one camera frame.
+struct FrameObservation {
+    var hands: [HandPose]
+    var body: BodyPose?
+
+    /// Best hand for fingerspelling: highest tracking quality.
+    var primaryHand: HandPose? { hands.max { $0.quality < $1.quality } }
+}
+
+/// Runs Apple's on-device hand-pose and body-pose models on each frame.
+/// Works on any Apple Silicon or Intel Mac on macOS 11+.
+final class PoseTracker {
+    private let handRequest: VNDetectHumanHandPoseRequest = {
         let r = VNDetectHumanHandPoseRequest()
-        r.maximumHandCount = 1
+        r.maximumHandCount = 2
         return r
     }()
+    private let bodyRequest = VNDetectHumanBodyPoseRequest()
 
-    func detect(in pixelBuffer: CVPixelBuffer) -> HandPose? {
+    func detect(in pixelBuffer: CVPixelBuffer) -> FrameObservation {
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         do {
-            try handler.perform([request])
+            try handler.perform([handRequest, bodyRequest])
         } catch {
-            return nil
+            return FrameObservation(hands: [], body: nil)
         }
-        guard let obs = request.results?.first,
-              let all = try? obs.recognizedPoints(.all) else { return nil }
 
+        var hands: [HandPose] = []
+        for obs in handRequest.results ?? [] {
+            if let hand = Self.hand(from: obs) { hands.append(hand) }
+        }
+        let body = (bodyRequest.results ?? []).first.flatMap(Self.body(from:))
+        return FrameObservation(hands: hands, body: body)
+    }
+
+    private static func hand(from obs: VNHumanHandPoseObservation) -> HandPose? {
+        guard let all = try? obs.recognizedPoints(.all) else { return nil }
         var points = [CGPoint](repeating: .zero, count: Joint.allCases.count)
         var conf = [Float](repeating: 0, count: Joint.allCases.count)
         for joint in Joint.allCases {
@@ -86,6 +149,27 @@ final class HandPoseTracker {
         let tipConf = [Joint.indexTip, .middleTip, .ringTip, .littleTip, .thumbTip].map { conf[$0.rawValue] }
         guard tipConf.filter({ $0 > 0.3 }).count >= 3 else { return nil }
 
-        return HandPose(points: points, confidences: conf, isLeft: obs.chirality == .left)
+        return HandPose(
+            points: points,
+            confidences: conf,
+            isLeft: obs.chirality == .left,
+            chiralityKnown: obs.chirality != .unknown
+        )
+    }
+
+    private static func body(from obs: VNHumanBodyPoseObservation) -> BodyPose? {
+        guard let all = try? obs.recognizedPoints(.all) else { return nil }
+        var points = [CGPoint](repeating: .zero, count: BodyJoint.allCases.count)
+        var conf = [Float](repeating: 0, count: BodyJoint.allCases.count)
+        for joint in BodyJoint.allCases {
+            if let p = all[joint.visionName] {
+                points[joint.rawValue] = p.location
+                conf[joint.rawValue] = p.confidence
+            }
+        }
+        let anyFace = conf[BodyJoint.nose.rawValue] > 0.3
+        let shoulders = conf[BodyJoint.leftShoulder.rawValue] > 0.3 && conf[BodyJoint.rightShoulder.rawValue] > 0.3
+        guard anyFace || shoulders else { return nil }
+        return BodyPose(points: points, confidences: conf)
     }
 }

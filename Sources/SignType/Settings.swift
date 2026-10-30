@@ -8,16 +8,22 @@ enum Mode: String, CaseIterable, Identifiable {
     case batch
     /// Frames are sent to Gemma 4 when you stop; its transcript is typed.
     case gemma
+    /// Live on-device letters and taught words; untaught motion signs go to Gemma 4.
+    case hybrid
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .live: return "Live letters (on-device)"
+        case .live: return "Live (on-device)"
         case .batch: return "Batch, type at the end (on-device)"
         case .gemma: return "Batch via Gemma 4 (cloud)"
+        case .hybrid: return "Hybrid: on-device, Gemma 4 for unknown signs"
         }
     }
+
+    var usesGemma: Bool { self == .gemma || self == .hybrid }
+    var typesLive: Bool { self == .live || self == .hybrid }
 }
 
 final class Settings: ObservableObject {
