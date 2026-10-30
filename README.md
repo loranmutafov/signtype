@@ -162,5 +162,5 @@ hotkey within its first 1.5 s.
 
 ## Licence
 
-GNU General Public License v3.0 or later. See [LICENCE](LICENCE). Derivatives must stay open source,
-and every contributor grants users a licence to any patents their contributions would otherwise infringe.
+Apache License 2.0. See [LICENCE](LICENCE). Permissive (no copyleft), with an explicit patent licence
+from every contributor and termination of that licence for anyone who brings a patent claim over the code.
