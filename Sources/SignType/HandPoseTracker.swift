@@ -126,20 +126,30 @@ final class PoseTracker {
     }()
     private let bodyRequest = VNDetectHumanBodyPoseRequest()
 
+    /// Shoulders and face move slowly; run the body model on every Nth frame and reuse the
+    /// last result in between. Keeps the per-frame cost close to hands-only.
+    var bodyEvery = 3
+    private var frameIndex = 0
+    private var cachedBody: BodyPose?
+
     func detect(in pixelBuffer: CVPixelBuffer) -> FrameObservation {
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        let runBody = frameIndex % max(bodyEvery, 1) == 0
+        frameIndex &+= 1
         do {
-            try handler.perform([handRequest, bodyRequest])
+            try handler.perform(runBody ? [handRequest, bodyRequest] : [handRequest])
         } catch {
-            return FrameObservation(hands: [], body: nil)
+            return FrameObservation(hands: [], body: cachedBody)
         }
 
         var hands: [HandPose] = []
         for obs in handRequest.results ?? [] {
             if let hand = Self.hand(from: obs) { hands.append(hand) }
         }
-        let body = (bodyRequest.results ?? []).first.flatMap(Self.body(from:))
-        return FrameObservation(hands: hands, body: body)
+        if runBody {
+            cachedBody = (bodyRequest.results ?? []).first.flatMap(Self.body(from:))
+        }
+        return FrameObservation(hands: hands, body: cachedBody)
     }
 
     private static func hand(from obs: VNHumanHandPoseObservation) -> HandPose? {

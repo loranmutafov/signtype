@@ -176,9 +176,9 @@ final class MotionSegmenter {
     /// camera registers but tracking jitter does not.
     var sizeSmoothing = 0.3
     var sizeWeight = 1.5
-    /// Letters are only paused once a segment has travelled this far, so jitter that briefly
-    /// trips the start threshold does not block fingerspelling.
-    var pauseLettersAfterPath = 0.1
+    /// Letters are only paused once a segment has travelled this far. Finger changes between
+    /// letters move the wrist a little; whole-word signs move it a lot.
+    var pauseLettersAfterPath = 0.25
 
     /// True when a sign is clearly in progress (not just the first jittery frames).
     var isMoving: Bool { isActive && path >= pauseLettersAfterPath }

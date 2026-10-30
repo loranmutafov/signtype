@@ -51,6 +51,7 @@ final class SessionController: ObservableObject {
     private var lastProcessed: CFTimeInterval = 0
     private var lastCapture: CFTimeInterval = 0
     private var lastDiag: CFTimeInterval = 0
+    private var processedSinceDiag = 0
 
     // Main only.
     private var startedAt: CFTimeInterval = 0
@@ -311,10 +312,13 @@ final class SessionController: ObservableObject {
         let inMotion = segmenter.isMoving
         if segment != nil { matcher.maxDistance = Float(settings.matchDistance) }
 
+        processedSinceDiag += 1
         if now - lastDiag >= 1 {
+            let fps = Double(processedSinceDiag) / (now - lastDiag)
             lastDiag = now
+            processedSinceDiag = 0
             let bodyInfo = observation.body?.summary ?? "none"
-            Log.session.debug("hands=\(observation.hands.count) body=[\(bodyInfo)] anchored=\(motion?.anchored ?? false) speed=\(self.segmenter.currentSpeed, format: .fixed(precision: 3)) active=\(inMotion) words=\(self.matcher.counts.values.reduce(0, +))")
+            Log.session.debug("fps=\(fps, format: .fixed(precision: 1)) hands=\(observation.hands.count) body=[\(bodyInfo)] anchored=\(motion?.anchored ?? false) speed=\(self.segmenter.currentSpeed, format: .fixed(precision: 3)) moving=\(inMotion) words=\(self.matcher.counts.values.reduce(0, +))")
         }
 
         var flash: Flash? = nil
